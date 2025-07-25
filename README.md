@@ -1,1 +1,1 @@
-# realtime-chat-go
+# realtime-chat
