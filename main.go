@@ -30,6 +30,11 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	fmt.Printf("Accepted connection from: %v\n", conn.RemoteAddr())
+	_, err := conn.Write([]byte("'^]' is the escape character.\n"))
+	if err != nil {
+		log.Println("Error writing to connection:", err)
+		return
+	}
 
 	buffer := make([]byte, 1024)
 
@@ -48,7 +53,7 @@ func handleConnection(conn net.Conn) {
 		receivedData := strings.TrimSpace(string(buffer[:length]))
 		fmt.Printf("Received %d bytes: %s\n", length, receivedData)
 
-		if receivedData == "!" {
+		if receivedData == "^]" {
 			fmt.Fprintln(conn, "Goodbye!")
 			return
 		}
