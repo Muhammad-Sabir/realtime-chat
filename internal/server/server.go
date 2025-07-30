@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"fmt"
@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-func main() {
-	listener, err := net.Listen("tcp", ":7007")
+func Start(address string) {
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		log.Fatal(err)
 	}
