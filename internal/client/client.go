@@ -19,35 +19,51 @@ func Start(address string) {
 	fmt.Println("Connected to:", conn.RemoteAddr())
 	fmt.Println("Write `!q` to disconnect.")
 
-	go func() {
-		responseReader := bufio.NewReader(conn)
-		for {
-			receivedData, err := responseReader.ReadString('\n')
-			if err != nil {
-				log.Println("Error reading from server:", err)
-				os.Exit(1) // Terminate on error
-			}
-			receivedData = strings.TrimSpace(receivedData)
-			fmt.Println("Received:", receivedData)
-			fmt.Print("Send: ")
-		}
-	}()
+	clientInput := make(chan string)
+	serverResponse := make(chan string)
 
+	go readFromServer(conn, serverResponse)
+	go takeUserInput(clientInput)
+
+	for {
+		select {
+		case sentence := <-clientInput:
+			if sentence == "!q" {
+				fmt.Println("Disconnecting...")
+				return
+			}
+			go writeToServer(conn, sentence)
+		case serverResponse := <-serverResponse:
+			fmt.Println(serverResponse)
+		}
+	}
+}
+
+func readFromServer(conn net.Conn, serverResponse chan<- string) {
+	responseReader := bufio.NewReader(conn)
+	for {
+		receivedData, err := responseReader.ReadString('\n')
+		if err != nil {
+			log.Println("Error reading from server:", err)
+			os.Exit(1) // Terminate on error
+		}
+		serverResponse <- strings.TrimSpace(receivedData)
+	}
+}
+
+func takeUserInput(clientInput chan<- string) {
 	stdinReader := bufio.NewReader(os.Stdin)
 
 	for {
 		sentence, _ := stdinReader.ReadString('\n')
-		sentence = strings.TrimSpace(sentence)
+		clientInput <- strings.TrimSpace(sentence)
+	}
+}
 
-		if sentence == "!q" {
-			fmt.Println("Disconnecting...")
-			break
-		}
-
-		_, err = conn.Write([]byte(sentence + "\n"))
-		if err != nil {
-			log.Println("Error writing to connection:", err)
-			return
-		}
+func writeToServer(conn net.Conn, clientInput string) {
+	_, err := conn.Write([]byte(clientInput + "\n"))
+	if err != nil {
+		log.Println("Error writing to connection:", err)
+		return
 	}
 }
