@@ -33,8 +33,11 @@ func handleConnection(conn net.Conn) {
 	fmt.Printf("Accepted connection from: %v\n", conn.RemoteAddr())
 
 	clientInput := make(chan string)
-
+	writeToClient(conn, "Enter your name: ")
 	go readFromClient(conn, clientInput)
+
+	clientName := <-clientInput
+	fmt.Println(clientName + " connected.")
 
 	for {
 		receivedData := <-clientInput
@@ -46,6 +49,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
+		receivedData = clientName + ": " + receivedData
 		go writeToClient(conn, receivedData)
 	}
 }
