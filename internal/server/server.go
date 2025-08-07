@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -30,16 +31,38 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	fmt.Printf("Accepted connection from: %v\n", conn.RemoteAddr())
-	_, err := conn.Write([]byte("'^]' is the escape character.\n"))
+
+	clientInput := make(chan string)
+
+	go readFromClient(conn, clientInput)
+
+	for {
+		receivedData := <-clientInput
+		fmt.Printf("Received: %s\n", receivedData)
+
+		if receivedData == "exit()" {
+			fmt.Println("Disconnecting...")
+			writeToClient(conn, "Goodbye...")
+			return
+		}
+
+		go writeToClient(conn, receivedData)
+	}
+}
+
+func writeToClient(conn net.Conn, data string) {
+	_, err := conn.Write([]byte(data + "\n"))
 	if err != nil {
 		log.Println("Error writing to connection:", err)
 		return
 	}
+}
 
-	buffer := make([]byte, 1024)
+func readFromClient(conn net.Conn, clientInput chan<- string) {
+	clientInputReader := bufio.NewReader(conn)
 
 	for {
-		length, err := conn.Read(buffer)
+		receivedData, err := clientInputReader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
 				log.Println("Error reading from connection:", err)
@@ -47,21 +70,9 @@ func handleConnection(conn net.Conn) {
 				log.Println("Error reading from connection:", err)
 			}
 
+			clientInput <- "exit()"
 			return
 		}
-
-		receivedData := strings.TrimSpace(string(buffer[:length]))
-		fmt.Printf("Received %d bytes: %s\n", length, receivedData)
-
-		if receivedData == "^]" {
-			fmt.Fprintln(conn, "Goodbye!")
-			return
-		}
-
-		_, err = conn.Write([]byte(receivedData + "\n"))
-		if err != nil {
-			log.Println("Error writing to connection:", err)
-			return
-		}
+		clientInput <- strings.TrimSpace(receivedData)
 	}
 }

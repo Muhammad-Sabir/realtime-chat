@@ -17,7 +17,7 @@ func Start(address string) {
 	defer conn.Close()
 
 	fmt.Println("Connected to:", conn.RemoteAddr())
-	fmt.Println("Write `!q` to disconnect.")
+	fmt.Println("Write `exit()` to disconnect.")
 
 	clientInput := make(chan string)
 	serverResponse := make(chan string)
@@ -28,7 +28,8 @@ func Start(address string) {
 	for {
 		select {
 		case sentence := <-clientInput:
-			if sentence == "!q" {
+			if sentence == "exit()" {
+				writeToServer(conn, sentence)
 				fmt.Println("Disconnecting...")
 				return
 			}
