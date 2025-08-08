@@ -12,6 +12,8 @@ import (
 	"github.com/Muhammad-Sabir/realtime-chat/internal/models"
 )
 
+var store *models.UserStore
+
 func Start(address string) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -19,7 +21,7 @@ func Start(address string) {
 	}
 	fmt.Println("Server listening on:", listener.Addr().String())
 
-	store := models.NewUserStore()
+	store = models.NewUserStore()
 
 	for {
 		conn, err := listener.Accept()
@@ -28,11 +30,11 @@ func Start(address string) {
 			continue
 		}
 
-		go handleConnection(conn, store)
+		go handleConnection(conn)
 	}
 }
 
-func handleConnection(conn net.Conn, store *models.UserStore) {
+func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	fmt.Printf("Accepted connection from: %v\n", conn.RemoteAddr())
@@ -48,19 +50,22 @@ func handleConnection(conn net.Conn, store *models.UserStore) {
 	}
 	defer store.RemoveUser(user)
 
+	disconnect := make(chan string)
 	clientMsg := make(chan models.Message)
-	go readClientMessage(clientMsg, clientInputReader)
+	go readClientMessage(clientMsg, clientInputReader, disconnect)
 
 	for {
-		message := <-clientMsg
-		fmt.Printf("Received: %s\n", message.Content)
-
-		if message.Content == "exit()" {
-			fmt.Println("Disconnecting...")
-			return
+		select {
+		case message := <-clientMsg:
+			fmt.Printf("Received: %s\n", message.Content)
+			go writeToClient(conn, message)
+		case disconnectClient := <-disconnect:
+			if disconnectClient == "exit()" {
+				log.Println("Disconnecting the user: ", user.Email)
+				return
+			}
 		}
 
-		go writeToClient(conn, message)
 	}
 }
 
@@ -78,7 +83,7 @@ func writeToClient(conn net.Conn, msg models.Message) {
 	}
 }
 
-func readClientMessage(clientMsg chan<- models.Message, reader *bufio.Reader) {
+func readClientMessage(clientMsg chan<- models.Message, reader *bufio.Reader, disconnect chan<- string) {
 	for {
 		var msg models.Message
 
@@ -86,9 +91,9 @@ func readClientMessage(clientMsg chan<- models.Message, reader *bufio.Reader) {
 		if err != nil {
 			if err != io.EOF {
 				log.Println("Error reading from connection:", err)
-			} else {
-				log.Println("readFromClient EOF", err)
 			}
+
+			disconnect <- "exit()"
 			return
 		}
 
