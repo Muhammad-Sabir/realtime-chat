@@ -22,7 +22,7 @@ func Start(address string) {
 	defer conn.Close()
 
 	fmt.Println("Connected to:", conn.RemoteAddr())
-	fmt.Println("Write `exit()` to disconnect. \n\n")
+	fmt.Print("Write `exit()` to disconnect. \n\n")
 
 	stdinReader := bufio.NewReader(os.Stdin)
 	responseReader := bufio.NewReader(conn)
