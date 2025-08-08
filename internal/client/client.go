@@ -30,9 +30,8 @@ func Start(address string) {
 	clientInput := make(chan string)
 	serverResponse := make(chan models.Message)
 
-	fmt.Print("Enter your name: ")
-	go takeUserInput(clientInput, stdinReader)
-	user = models.NewUser(<-clientInput)
+	getUserData(stdinReader)
+	writeUserToServer(conn)
 
 	go readFromServer(serverResponse, responseReader)
 	go takeUserInput(clientInput, stdinReader)
@@ -46,11 +45,23 @@ func Start(address string) {
 			}
 
 			msg := models.NewMessage(user, text)
-			go writeToServer(conn, msg)
+			go writeMessageToServer(conn, msg)
 		case serverMsg := <-serverResponse:
 			fmt.Println(serverMsg.String())
 		}
 	}
+}
+
+func getUserData(reader *bufio.Reader) {
+	fmt.Print("Enter your name: ")
+	name, _ := reader.ReadString('\n')
+	name = strings.TrimSpace(name)
+
+	fmt.Print("Enter your email: ")
+	email, _ := reader.ReadString('\n')
+	email = strings.TrimSpace(email)
+
+	user = models.NewUser(name, email)
 }
 
 func readFromServer(serverResponse chan<- models.Message, reader *bufio.Reader) {
@@ -60,7 +71,7 @@ func readFromServer(serverResponse chan<- models.Message, reader *bufio.Reader) 
 		receivedData, err := reader.ReadString('\n')
 		if err != nil {
 			log.Println("Error reading from server:", err)
-			os.Exit(1) // Terminate on error
+			os.Exit(1)
 		}
 
 		err = json.Unmarshal([]byte(receivedData), &msg)
@@ -80,8 +91,22 @@ func takeUserInput(clientInput chan<- string, reader *bufio.Reader) {
 	}
 }
 
-func writeToServer(conn net.Conn, msg models.Message) {
+func writeMessageToServer(conn net.Conn, msg models.Message) {
 	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
+
+	_, err = conn.Write(append(data, '\n'))
+	if err != nil {
+		log.Println("Error writing to connection:", err)
+		return
+	}
+}
+
+func writeUserToServer(conn net.Conn) {
+	data, err := json.Marshal(user)
 	if err != nil {
 		log.Println("Error marshalling message:", err)
 		return

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 
 	"github.com/Muhammad-Sabir/realtime-chat/internal/models"
 )
@@ -18,6 +19,8 @@ func Start(address string) {
 	}
 	fmt.Println("Server listening on:", listener.Addr().String())
 
+	store := models.NewUserStore()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -25,20 +28,28 @@ func Start(address string) {
 			continue
 		}
 
-		go handleConnection(conn)
+		go handleConnection(conn, store)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, store *models.UserStore) {
 	defer conn.Close()
 
 	fmt.Printf("Accepted connection from: %v\n", conn.RemoteAddr())
 
 	clientInputReader := bufio.NewReader(conn)
 
-	clientMsg := make(chan models.Message)
+	user := readClientUser(clientInputReader)
 
-	go readFromClient(clientMsg, clientInputReader)
+	err := store.AddUser(user)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer store.RemoveUser(user)
+
+	clientMsg := make(chan models.Message)
+	go readClientMessage(clientMsg, clientInputReader)
 
 	for {
 		message := <-clientMsg
@@ -67,16 +78,16 @@ func writeToClient(conn net.Conn, msg models.Message) {
 	}
 }
 
-func readFromClient(clientMsg chan<- models.Message, reader *bufio.Reader) {
+func readClientMessage(clientMsg chan<- models.Message, reader *bufio.Reader) {
 	for {
 		var msg models.Message
 
 		receivedData, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				log.Println("readFromClient EOF", err)
-			} else {
 				log.Println("Error reading from connection:", err)
+			} else {
+				log.Println("readFromClient EOF", err)
 			}
 			return
 		}
@@ -89,4 +100,22 @@ func readFromClient(clientMsg chan<- models.Message, reader *bufio.Reader) {
 
 		clientMsg <- msg
 	}
+}
+
+func readClientUser(reader *bufio.Reader) *models.User {
+	var user models.User
+
+	receivedData, err := reader.ReadString('\n')
+	if err != nil {
+		log.Println("Error reading from connection:", err)
+		os.Exit(1)
+	}
+
+	err = json.Unmarshal([]byte(receivedData), &user)
+	if err != nil {
+		log.Println("Error unmarshalling:", err)
+		os.Exit(1)
+	}
+
+	return &user
 }
