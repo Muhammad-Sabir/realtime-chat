@@ -2,12 +2,17 @@ package client
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"strings"
+
+	"github.com/Muhammad-Sabir/realtime-chat/internal/models"
 )
+
+var user models.User
 
 func Start(address string) {
 	conn, err := net.Dial("tcp", address)
@@ -17,52 +22,72 @@ func Start(address string) {
 	defer conn.Close()
 
 	fmt.Println("Connected to:", conn.RemoteAddr())
-	fmt.Println("Write `exit()` to disconnect.")
+	fmt.Println("Write `exit()` to disconnect. \n\n")
+
+	stdinReader := bufio.NewReader(os.Stdin)
+	responseReader := bufio.NewReader(conn)
 
 	clientInput := make(chan string)
-	serverResponse := make(chan string)
+	serverResponse := make(chan models.Message)
 
-	go readFromServer(conn, serverResponse)
-	go takeUserInput(clientInput)
+	fmt.Print("Enter your name: ")
+	go takeUserInput(clientInput, stdinReader)
+	user = models.NewUser(<-clientInput)
+
+	go readFromServer(serverResponse, responseReader)
+	go takeUserInput(clientInput, stdinReader)
 
 	for {
 		select {
-		case sentence := <-clientInput:
-			if sentence == "exit()" {
-				writeToServer(conn, sentence)
+		case text := <-clientInput:
+			if text == "exit()" {
 				fmt.Println("Disconnecting...")
 				return
 			}
-			go writeToServer(conn, sentence)
-		case serverResponse := <-serverResponse:
-			fmt.Println(serverResponse)
+
+			msg := models.NewMessage(user, text)
+			go writeToServer(conn, msg)
+		case serverMsg := <-serverResponse:
+			fmt.Println(serverMsg.String())
 		}
 	}
 }
 
-func readFromServer(conn net.Conn, serverResponse chan<- string) {
-	responseReader := bufio.NewReader(conn)
+func readFromServer(serverResponse chan<- models.Message, reader *bufio.Reader) {
 	for {
-		receivedData, err := responseReader.ReadString('\n')
+		var msg models.Message
+
+		receivedData, err := reader.ReadString('\n')
 		if err != nil {
 			log.Println("Error reading from server:", err)
 			os.Exit(1) // Terminate on error
 		}
-		serverResponse <- strings.TrimSpace(receivedData)
+
+		err = json.Unmarshal([]byte(receivedData), &msg)
+		if err != nil {
+			log.Println("Error unmarshalling:", err)
+			continue
+		}
+
+		serverResponse <- msg
 	}
 }
 
-func takeUserInput(clientInput chan<- string) {
-	stdinReader := bufio.NewReader(os.Stdin)
-
+func takeUserInput(clientInput chan<- string, reader *bufio.Reader) {
 	for {
-		sentence, _ := stdinReader.ReadString('\n')
+		sentence, _ := reader.ReadString('\n')
 		clientInput <- strings.TrimSpace(sentence)
 	}
 }
 
-func writeToServer(conn net.Conn, clientInput string) {
-	_, err := conn.Write([]byte(clientInput + "\n"))
+func writeToServer(conn net.Conn, msg models.Message) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
+
+	_, err = conn.Write(append(data, '\n'))
 	if err != nil {
 		log.Println("Error writing to connection:", err)
 		return

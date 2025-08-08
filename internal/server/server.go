@@ -2,11 +2,13 @@ package server
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"strings"
+
+	"github.com/Muhammad-Sabir/realtime-chat/internal/models"
 )
 
 func Start(address string) {
@@ -32,51 +34,59 @@ func handleConnection(conn net.Conn) {
 
 	fmt.Printf("Accepted connection from: %v\n", conn.RemoteAddr())
 
-	clientInput := make(chan string)
-	writeToClient(conn, "Enter your name: ")
-	go readFromClient(conn, clientInput)
+	clientInputReader := bufio.NewReader(conn)
 
-	clientName := <-clientInput
-	fmt.Println(clientName + " connected.")
+	clientMsg := make(chan models.Message)
+
+	go readFromClient(clientMsg, clientInputReader)
 
 	for {
-		receivedData := <-clientInput
-		fmt.Printf("Received: %s\n", receivedData)
+		message := <-clientMsg
+		fmt.Printf("Received: %s\n", message.Content)
 
-		if receivedData == "exit()" {
+		if message.Content == "exit()" {
 			fmt.Println("Disconnecting...")
-			writeToClient(conn, "Goodbye...")
 			return
 		}
 
-		receivedData = clientName + ": " + receivedData
-		go writeToClient(conn, receivedData)
+		go writeToClient(conn, message)
 	}
 }
 
-func writeToClient(conn net.Conn, data string) {
-	_, err := conn.Write([]byte(data + "\n"))
+func writeToClient(conn net.Conn, msg models.Message) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
+
+	_, err = conn.Write(append(data, '\n'))
 	if err != nil {
 		log.Println("Error writing to connection:", err)
 		return
 	}
 }
 
-func readFromClient(conn net.Conn, clientInput chan<- string) {
-	clientInputReader := bufio.NewReader(conn)
-
+func readFromClient(clientMsg chan<- models.Message, reader *bufio.Reader) {
 	for {
-		receivedData, err := clientInputReader.ReadString('\n')
+		var msg models.Message
+
+		receivedData, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				log.Println("Error reading from connection:", err)
+				log.Println("readFromClient EOF", err)
 			} else {
 				log.Println("Error reading from connection:", err)
 			}
-
-			clientInput <- "exit()"
 			return
 		}
-		clientInput <- strings.TrimSpace(receivedData)
+
+		err = json.Unmarshal([]byte(receivedData), &msg)
+		if err != nil {
+			log.Println("Error unmarshalling:", err)
+			continue
+		}
+
+		clientMsg <- msg
 	}
 }
