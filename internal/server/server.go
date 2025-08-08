@@ -12,7 +12,10 @@ import (
 	"github.com/Muhammad-Sabir/realtime-chat/internal/models"
 )
 
-var store *models.UserStore
+var (
+	usersStore       *models.UserStore
+	connectionsStore *models.ConnectionsStore
+)
 
 func Start(address string) {
 	listener, err := net.Listen("tcp", address)
@@ -21,7 +24,8 @@ func Start(address string) {
 	}
 	fmt.Println("Server listening on:", listener.Addr().String())
 
-	store = models.NewUserStore()
+	usersStore = models.NewUserStore()
+	connectionsStore = models.NewConnectionsStore()
 
 	for {
 		conn, err := listener.Accept()
@@ -43,12 +47,15 @@ func handleConnection(conn net.Conn) {
 
 	user := readClientUser(clientInputReader)
 
-	err := store.AddUser(user)
+	err := usersStore.AddUser(user)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer store.RemoveUser(user)
+	defer usersStore.RemoveUser(user)
+
+	connectionsStore.AddConnection(user, conn.RemoteAddr())
+	defer connectionsStore.RemoveConnection(user)
 
 	disconnect := make(chan string)
 	clientMsg := make(chan models.Message)
@@ -67,6 +74,10 @@ func handleConnection(conn net.Conn) {
 		}
 
 	}
+}
+
+func addtoConnections(addr net.Addr, user *models.User) {
+
 }
 
 func writeToClient(conn net.Conn, msg models.Message) {
